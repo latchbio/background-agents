@@ -47,6 +47,8 @@ export interface SandboxHandler {
   verifySandboxToken: (request: Request) => Promise<Response>;
   openaiTokenRefresh: () => Promise<Response>;
   scmCredentials: () => Promise<Response>;
+  /** Return the sandbox's resolved tunnel URLs as a `{ [port]: url }` map. */
+  tunnelUrls: () => Promise<Response>;
 }
 
 export function createSandboxHandler(deps: SandboxHandlerDeps): SandboxHandler {
@@ -188,6 +190,55 @@ export function createSandboxHandler(deps: SandboxHandlerDeps): SandboxHandler {
           account_id: result.accountId,
         },
         { status: 200 }
+      );
+    },
+
+    /**
+     * Return the sandbox's resolved tunnel URLs as a `{ [port]: url }` map.
+     *
+     * `sandbox.tunnel_urls` is a JSON-encoded `{ [port: string]: string }`
+     * stored by `SandboxLifecycleManager#storeAndBroadcastTunnelUrls`. When the
+     * control plane has resolved Modal tunnel URLs but the in-sandbox file write
+     * (`sandbox.open` from outside) hasn't propagated to the sandbox's own
+     * filesystem view — a real failure mode on the Modal provider — this
+     * endpoint is the in-sandbox fallback for retrieving them via
+     * `SANDBOX_AUTH_TOKEN`.
+     *
+     * Responses:
+     * - `404` when no sandbox exists for the session.
+     * - `500` when the stored value is malformed JSON or not a JSON object, so
+     *   corrupted data is distinguishable from "no tunnels resolved yet" (an
+     *   empty map would let the in-sandbox setup silently write an empty
+     *   `.tunnels.env`).
+     * - `200` with `{ tunnelUrls }` otherwise (empty map when none are stored).
+     */
+    async tunnelUrls(): Promise<Response> {
+      const sandbox = deps.getSandbox();
+      if (!sandbox) {
+        return Response.json({ error: "No sandbox" }, { status: 404 });
+      }
+
+      let urls: Record<string, string> = {};
+      if (sandbox.tunnel_urls) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(sandbox.tunnel_urls);
+        } catch (err) {
+          deps.getLog().warn("Failed to parse stored tunnel_urls JSON", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return Response.json({ error: "Invalid stored tunnel URLs" }, { status: 500 });
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          deps.getLog().warn("Stored tunnel_urls is not a JSON object");
+          return Response.json({ error: "Invalid stored tunnel URLs" }, { status: 500 });
+        }
+        urls = parsed as Record<string, string>;
+      }
+
+      return Response.json(
+        { tunnelUrls: urls },
+        { status: 200, headers: { "Cache-Control": "no-store" } }
       );
     },
 
