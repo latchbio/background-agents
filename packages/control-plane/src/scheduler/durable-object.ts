@@ -77,6 +77,25 @@ export class SchedulerDO extends DurableObject<Env> {
     }
   }
 
+  private async failRunAndTrackBestEffort(
+    store: AutomationStore,
+    runId: string,
+    automationId: string,
+    reason: string
+  ): Promise<void> {
+    try {
+      await this.failRunAndTrack(store, runId, automationId, reason);
+    } catch (trackingError) {
+      this.log.error("Failed to track run failure", {
+        event: "scheduler.fail_track_error",
+        automation_id: automationId,
+        run_id: runId,
+        original_reason: reason,
+        error: trackingError instanceof Error ? trackingError.message : String(trackingError),
+      });
+    }
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -194,7 +213,7 @@ export class SchedulerDO extends DurableObject<Env> {
             error: message,
           });
 
-          await this.failRunAndTrack(store, runId, automation.id, message);
+          await this.failRunAndTrackBestEffort(store, runId, automation.id, message);
 
           failed++;
         }
@@ -350,7 +369,7 @@ export class SchedulerDO extends DurableObject<Env> {
         triggered++;
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        await this.failRunAndTrack(store, runId, automation.id, message);
+        await this.failRunAndTrackBestEffort(store, runId, automation.id, message);
       }
     }
 
@@ -446,7 +465,7 @@ export class SchedulerDO extends DurableObject<Env> {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
 
-      await this.failRunAndTrack(store, runId, automationId, message);
+      await this.failRunAndTrackBestEffort(store, runId, automationId, message);
 
       this.log.error("Manual trigger failed", {
         event: "scheduler.manual_trigger_failed",
