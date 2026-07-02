@@ -3,6 +3,8 @@ import {
   clientMessageSchema,
   createSessionRequestSchema,
   sandboxEventSchema,
+  spawnChildSessionRequestSchema,
+  spawnContextSchema,
   userPreferencesRequestSchema,
 } from ".";
 
@@ -187,6 +189,86 @@ describe("boundary schemas", () => {
     it("rejects malformed preference fields", () => {
       const result = userPreferencesRequestSchema.safeParse({
         model: 123,
+      });
+
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("spawnChildSessionRequestSchema", () => {
+    it("parses a valid child session request", () => {
+      const result = spawnChildSessionRequestSchema.safeParse({
+        title: "Investigate failure",
+        prompt: "Find and fix the failing test",
+        repoOwner: "open-inspect",
+        repoName: "background-agents",
+        model: "anthropic/claude-sonnet-4-6",
+        reasoningEffort: "high",
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects a malformed partial child session request", () => {
+      const result = spawnChildSessionRequestSchema.safeParse({
+        title: "Missing prompt",
+      });
+
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("spawnContextSchema", () => {
+    it("parses a valid spawn context with nullable fields", () => {
+      const result = spawnContextSchema.safeParse({
+        repoOwner: "open-inspect",
+        repoName: "background-agents",
+        repoId: null,
+        model: "anthropic/claude-sonnet-4-6",
+        reasoningEffort: null,
+        baseBranch: null,
+        owner: {
+          userId: "user-1",
+          scmUserId: null,
+          scmLogin: null,
+          scmName: null,
+          scmEmail: null,
+          scmAccessTokenEncrypted: null,
+          scmRefreshTokenEncrypted: null,
+          scmTokenExpiresAt: null,
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it("parses a repo-less spawn context", () => {
+      const result = spawnContextSchema.safeParse({
+        repoOwner: null,
+        repoName: null,
+        repoId: null,
+        model: "anthropic/claude-sonnet-4-6",
+        reasoningEffort: null,
+        baseBranch: null,
+        owner: {
+          userId: "user-1",
+          scmUserId: null,
+          scmLogin: null,
+          scmName: null,
+          scmEmail: null,
+          scmAccessTokenEncrypted: null,
+          scmRefreshTokenEncrypted: null,
+          scmTokenExpiresAt: null,
+        },
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects a malformed partial spawn context", () => {
+      const result = spawnContextSchema.safeParse({
+        repoOwner: "open-inspect",
+        repoName: "background-agents",
       });
 
       expect(result.success).toBe(false);
