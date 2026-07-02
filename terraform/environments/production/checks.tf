@@ -12,16 +12,16 @@ check "vercel_url_matches" {
   }
 }
 
-# Warn when a custom domain is set without a zone ID. The custom domain is then
-# silently ignored and the app falls back to the workers.dev URL.
-check "cloudflare_custom_domain_config" {
-  assert {
-    condition = (
-      var.web_platform != "cloudflare" ||
-      trimspace(coalesce(var.cloudflare_custom_domain, "")) == "" ||
-      trimspace(coalesce(var.cloudflare_zone_id, "")) != ""
-    )
-    error_message = "cloudflare_custom_domain is set but cloudflare_zone_id is empty — the custom domain is ignored and the app falls back to the workers.dev URL."
+# Fail the plan when a custom domain is set but cannot take effect — wrong web
+# platform or missing zone ID. Hostname shape is validated on the variable
+# itself; this gate owns the cross-input policy, expressed via the normalized
+# locals so enablement (web_custom_domain_enabled) and enforcement stay in sync.
+resource "terraform_data" "cloudflare_custom_domain_gate" {
+  lifecycle {
+    precondition {
+      condition     = local.web_custom_domain == "" || local.web_custom_domain_enabled
+      error_message = "cloudflare_custom_domain is set but would be silently ignored: it requires web_platform = \"cloudflare\" and a non-empty cloudflare_zone_id."
+    }
   }
 }
 
