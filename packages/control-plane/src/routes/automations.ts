@@ -32,7 +32,6 @@ import { generateId } from "../auth/crypto";
 import { generateWebhookApiKey, hashApiKey, encryptSentrySecret } from "../auth/webhook-key";
 import { createLogger } from "../logger";
 import { automationRepositoriesInputSchema } from "@open-inspect/shared";
-import type { RepositoryAccessResult } from "../source-control";
 import {
   type Route,
   type RequestContext,
@@ -128,17 +127,19 @@ async function resolveRepositorySelection(
   env: Env,
   repositories: NormalizedRepositoryInput[],
   ctx: RequestContext
-): Promise<AutomationRepositoryInsert[] | Response> {
-  const resolved = await Promise.all(
+): Promise<AutomationRepositoryInsert[]> {
+  const settled = await Promise.allSettled(
     repositories.map((repository) =>
       resolveRepoOrError(env, repository.repoOwner, repository.repoName, ctx, logger)
     )
   );
-  for (const result of resolved) {
-    if (result instanceof Response) return result;
-  }
+  const resolved = settled.map((result) => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  });
+
   return repositories.map((repository, index) => {
-    const access = resolved[index] as RepositoryAccessResult;
+    const access = resolved[index];
     return {
       repo_owner: repository.repoOwner,
       repo_name: repository.repoName,
@@ -332,7 +333,6 @@ async function handleCreateAutomation(
   }
 
   const newRepositories = await resolveRepositorySelection(env, requestedRepositories, ctx);
-  if (newRepositories instanceof Response) return newRepositories;
 
   // Compute next run (only for schedule triggers)
   const nextRunAt = isSchedule
@@ -582,7 +582,6 @@ async function handleUpdateAutomation(
       throw e;
     }
     const resolved = await resolveRepositorySelection(env, selection.repositories, ctx);
-    if (resolved instanceof Response) return resolved;
     replacementRepositories = resolved;
   }
 
