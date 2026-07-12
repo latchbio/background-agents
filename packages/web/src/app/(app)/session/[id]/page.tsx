@@ -22,6 +22,7 @@ import {
 } from "@/lib/session-list";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { DEFAULT_MODEL, getDefaultReasoningEffort } from "@open-inspect/shared";
+import { resolveModelPreference, type ModelPreference } from "@/lib/model-selection";
 import { useEnabledModels } from "@/hooks/use-enabled-models";
 import type { ComboboxGroup } from "@/components/ui/combobox";
 
@@ -70,14 +71,21 @@ function SessionPageContent() {
   );
 
   const { handleArchive, handleUnarchive, renameSession } = useSessionListActions(sessionId);
-  const { selectedModel, reasoningEffort, setReasoningEffort, handleModelChange, modelItems } =
-    useModelSelection(sessionState);
+  const {
+    selectedModel,
+    reasoningEffort,
+    setReasoningEffort,
+    handleModelChange,
+    modelItems,
+    loadingEnabledModels,
+  } = useModelSelection(sessionState);
   const { prompt, inputRef, handleSubmit, handleInputChange, handleKeyDown } = usePromptInput(
     isProcessing,
     sendPrompt,
     sendTyping,
     selectedModel,
-    reasoningEffort
+    reasoningEffort,
+    loadingEnabledModels
   );
 
   const [selectedMediaArtifactId, setSelectedMediaArtifactId] = useState<string | null>(null);
@@ -359,16 +367,22 @@ function useSessionListActions(sessionId: string) {
 }
 
 /**
- * Model and reasoning-effort selection, kept consistent with the enabled-model
- * list and synced from session state once it loads.
+ * Model and reasoning-effort selection derived from session state until the
+ * user takes ownership of an explicit draft.
  */
 function useModelSelection(sessionState: SessionState) {
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
-  const [reasoningEffort, setReasoningEffort] = useState<string | undefined>(
-    getDefaultReasoningEffort(DEFAULT_MODEL)
-  );
+  const [modelPreferenceDraft, setModelPreferenceDraft] = useState<ModelPreference | null>(null);
 
-  const { enabledModels, enabledModelOptions } = useEnabledModels();
+  const { enabledModels, enabledModelOptions, loading: loadingEnabledModels } = useEnabledModels();
+  const { model: selectedModel, reasoningEffort } = resolveModelPreference(
+    modelPreferenceDraft ?? {
+      model: sessionState?.model ?? DEFAULT_MODEL,
+      reasoningEffort:
+        sessionState?.reasoningEffort ??
+        getDefaultReasoningEffort(sessionState?.model ?? DEFAULT_MODEL),
+    },
+    loadingEnabledModels ? undefined : enabledModels
+  );
   const modelItems = useMemo<ComboboxGroup[]>(
     () =>
       enabledModelOptions.map((group) => ({
@@ -383,30 +397,24 @@ function useModelSelection(sessionState: SessionState) {
   );
 
   const handleModelChange = useCallback((model: string) => {
-    setSelectedModel(model);
-    setReasoningEffort(getDefaultReasoningEffort(model));
+    setModelPreferenceDraft({ model, reasoningEffort: getDefaultReasoningEffort(model) });
   }, []);
 
-  // Reset to default if the selected model is no longer enabled
-  useEffect(() => {
-    if (enabledModels.length > 0 && !enabledModels.includes(selectedModel)) {
-      const fallback = enabledModels[0] ?? DEFAULT_MODEL;
-      setSelectedModel(fallback);
-      setReasoningEffort(getDefaultReasoningEffort(fallback));
-    }
-  }, [enabledModels, selectedModel]);
+  const setReasoningEffort = useCallback(
+    (nextReasoningEffort: string | undefined) => {
+      setModelPreferenceDraft({ model: selectedModel, reasoningEffort: nextReasoningEffort });
+    },
+    [selectedModel]
+  );
 
-  // Sync selectedModel and reasoningEffort with session state when it loads
-  useEffect(() => {
-    if (sessionState?.model) {
-      setSelectedModel(sessionState.model);
-      setReasoningEffort(
-        sessionState.reasoningEffort ?? getDefaultReasoningEffort(sessionState.model)
-      );
-    }
-  }, [sessionState?.model, sessionState?.reasoningEffort]);
-
-  return { selectedModel, reasoningEffort, setReasoningEffort, handleModelChange, modelItems };
+  return {
+    selectedModel,
+    reasoningEffort,
+    setReasoningEffort,
+    handleModelChange,
+    modelItems,
+    loadingEnabledModels,
+  };
 }
 
 /**
@@ -418,7 +426,8 @@ function usePromptInput(
   sendPrompt: ReturnType<typeof useSessionSocket>["sendPrompt"],
   sendTyping: ReturnType<typeof useSessionSocket>["sendTyping"],
   selectedModel: string,
-  reasoningEffort: string | undefined
+  reasoningEffort: string | undefined,
+  loadingEnabledModels: boolean
 ) {
   const [prompt, setPrompt] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -435,7 +444,7 @@ function usePromptInput(
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || isProcessing) return;
+    if (!prompt.trim() || isProcessing || loadingEnabledModels) return;
 
     // Drop any queued typing indicator — the prompt supersedes it
     clearTypingTimeout();
