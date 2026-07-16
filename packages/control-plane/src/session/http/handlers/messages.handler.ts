@@ -110,20 +110,7 @@ export function createMessagesHandler(deps: MessagesHandlerDeps): MessagesHandle
 
       const result = deps.messageService.listMessages({ cursor, limit, status });
 
-      return Response.json({
-        messages: result.messages.map((message) => ({
-          id: message.id,
-          authorId: message.author_id,
-          content: message.content,
-          source: message.source,
-          status: message.status,
-          createdAt: message.created_at,
-          startedAt: message.started_at,
-          completedAt: message.completed_at,
-        })),
-        cursor: result.cursor,
-        hasMore: result.hasMore,
-      });
+      return Response.json(result);
     },
   };
 }
