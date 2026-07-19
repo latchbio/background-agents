@@ -1,8 +1,10 @@
-import type {
-  SessionDiffFile,
-  SessionDiffManifest,
-  SessionDiffRepository,
-  SessionDiffState,
+import {
+  isSessionDiffErrorCode,
+  type SessionDiffErrorCode,
+  type SessionDiffFile,
+  type SessionDiffManifest,
+  type SessionDiffRepository,
+  type SessionDiffState,
 } from "@open-inspect/shared";
 
 type ReadySessionDiffRepository = Extract<SessionDiffRepository, { status: "ready" }>;
@@ -88,7 +90,7 @@ export function resolveDiffSelection(
 }
 
 export interface DiffErrorBody {
-  code?: string;
+  code?: SessionDiffErrorCode;
   error?: string;
 }
 
@@ -97,7 +99,7 @@ export function parseDiffErrorBody(value: unknown): DiffErrorBody {
   if (typeof value !== "object" || value === null) return {};
   const record = value as Record<string, unknown>;
   const body: DiffErrorBody = {};
-  if (typeof record.code === "string") body.code = record.code;
+  if (isSessionDiffErrorCode(record.code)) body.code = record.code;
   if (typeof record.error === "string") body.error = record.error;
   return body;
 }
