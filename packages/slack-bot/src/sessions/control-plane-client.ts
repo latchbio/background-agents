@@ -3,6 +3,7 @@ import {
   sendPromptResponseSchema,
   type CreateSessionResponse,
   type SendPromptResponse,
+  type SessionAttachmentReference,
 } from "@open-inspect/shared";
 import { getAuthHeaders } from "../internal-auth";
 import { createLogger } from "../logger";
@@ -104,14 +105,17 @@ export async function createSession(
   }
 }
 
-export async function sendPrompt(
-  env: Env,
-  sessionId: string,
-  content: string,
-  authorId: string,
-  callbackContext?: CallbackContext,
-  traceId?: string
-): Promise<SendPromptResult> {
+export interface SendPromptOptions {
+  sessionId: string;
+  content: string;
+  authorId: string;
+  callbackContext?: CallbackContext;
+  attachments?: SessionAttachmentReference[];
+  traceId?: string;
+}
+
+export async function sendPrompt(env: Env, options: SendPromptOptions): Promise<SendPromptResult> {
+  const { sessionId, content, authorId, callbackContext, attachments, traceId } = options;
   const startTime = Date.now();
   const base = { trace_id: traceId, session_id: sessionId, source: "slack" };
   try {
@@ -121,7 +125,13 @@ export async function sendPrompt(
       {
         method: "POST",
         headers,
-        body: JSON.stringify({ content, authorId, source: "slack", callbackContext }),
+        body: JSON.stringify({
+          content,
+          authorId,
+          source: "slack",
+          callbackContext,
+          ...(attachments?.length ? { attachments } : {}),
+        }),
         signal: AbortSignal.timeout(OUTBOUND_REQUEST_TIMEOUT_MS),
       }
     );
