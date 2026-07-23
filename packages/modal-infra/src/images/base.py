@@ -36,9 +36,12 @@ AGENT_BROWSER_VERSION = "0.21.2"
 TTYD_VERSION = "1.7.7"
 TTYD_SHA256 = "8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55"
 
+# kubectl version to install (pinned for reproducible images)
+KUBECTL_VERSION = "v1.36.3"
+
 # Cache buster - change this to force Modal image rebuild
-# v54: upgrade OpenCode after upstream SSE fixes
-CACHE_BUSTER = "v54-opencode-1-17-18"
+# v55: add kubectl, AWS CLI, and postgresql-client
+CACHE_BUSTER = "v55-kubectl-awscli-psql"
 
 # Base image with all development tools
 base_image = (
@@ -165,6 +168,20 @@ base_image = (
         f"npm install -g agent-browser@{AGENT_BROWSER_VERSION}",
         "agent-browser install",
         "agent-browser --version",
+    )
+    # Install infra CLIs: kubectl, AWS CLI v2, psql
+    .run_commands(
+        f"curl -fsSL -o /usr/local/bin/kubectl"
+        f" https://dl.k8s.io/release/{KUBECTL_VERSION}/bin/linux/amd64/kubectl",
+        "chmod +x /usr/local/bin/kubectl",
+        "kubectl version --client",
+        "curl -fsSL -o /tmp/awscliv2.zip https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip",
+        "unzip -q /tmp/awscliv2.zip -d /tmp",
+        "/tmp/aws/install",
+        "rm -rf /tmp/awscliv2.zip /tmp/aws",
+        "aws --version",
+        "apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*",
+        "psql --version",
     )
     # Create working directories
     .run_commands(
