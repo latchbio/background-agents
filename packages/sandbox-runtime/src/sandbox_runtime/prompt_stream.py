@@ -42,6 +42,7 @@ ANTHROPIC_ADAPTIVE_THINKING_MODELS: Final[frozenset[str]] = frozenset(
         "claude-opus-4-7",
         "claude-opus-4-8",
         "claude-sonnet-4-6",
+        "claude-sonnet-5",
     }
 )
 ANTHROPIC_ADAPTIVE_EFFORTS: Final[frozenset[str]] = frozenset(

@@ -59,9 +59,18 @@ export const MODEL_CATALOG = [
       {
         id: "anthropic/claude-sonnet-4-6",
         name: "Claude Sonnet 4.6",
-        description: "Latest balanced, fast coding",
+        description: "Balanced performance",
         default: true,
         reasoning: { efforts: ["low", "medium", "high", "max"], default: "high" },
+      },
+      {
+        id: "anthropic/claude-sonnet-5",
+        name: "Claude Sonnet 5",
+        description: "Latest balanced, fast coding",
+        reasoning: {
+          efforts: ["low", "medium", "high", "xhigh", "max"],
+          default: "high",
+        },
       },
       {
         id: "anthropic/claude-opus-4-5",
