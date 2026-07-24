@@ -26,6 +26,11 @@ SANDBOX_RUNTIME_DIR = Path(sandbox_runtime.__file__).parent
 # eager-subscription race in 1.15.5. Keep the CLI and plugin on the same pin.
 OPENCODE_VERSION = "1.17.18"
 
+# pi coding agent (pi.dev) version to install — the alternative agent harness
+# selected by "pi/<provider>/<model>" catalog models. Keep in sync with the
+# other image builders (e2b, daytona, opencomputer, vercel bootstrap).
+PI_VERSION = "0.81.1"
+
 # code-server version to install (pinned for reproducible images)
 CODE_SERVER_VERSION = "4.109.5"
 
@@ -41,7 +46,7 @@ KUBECTL_VERSION = "v1.36.3"
 
 # Cache buster - change this to force Modal image rebuild
 # v55: add kubectl, AWS CLI, and postgresql-client
-CACHE_BUSTER = "v55-kubectl-awscli-psql"
+CACHE_BUSTER = "v56-pi-agent"
 
 # Base image with all development tools
 base_image = (
@@ -120,6 +125,10 @@ base_image = (
         # Install @opencode-ai/plugin globally for custom tools
         # This ensures tools can import the plugin without needing to run bun add
         f"npm install -g @opencode-ai/plugin@{OPENCODE_VERSION} zod",
+        # pi coding agent (pi.dev) — alternative harness selected via pi/* models.
+        # Upstream recommends --ignore-scripts for global installs.
+        f"npm install -g --ignore-scripts @earendil-works/pi-coding-agent@{PI_VERSION}",
+        "pi --version || echo 'pi installed'",
     )
     # Pre-build OpenCode plugin deps into a staging directory.
     # At boot, _install_tools() copies these into .opencode/ so that

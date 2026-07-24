@@ -294,5 +294,6 @@ built with:
 - [OpenComputer](https://www.opencomputer.dev) - Cloud sandbox infrastructure
 - [E2B](https://e2b.dev) - Cloud sandbox infrastructure
 - [Cloudflare Workers](https://workers.cloudflare.com) - Edge computing
-- [OpenCode](https://opencode.ai) - Coding agent runtime
+- [OpenCode](https://opencode.ai) - Coding agent runtime (default)
+- [Pi](https://pi.dev) - Coding agent runtime (opt-in via `pi/*` models)
 - [Next.js](https://nextjs.org) - Web framework

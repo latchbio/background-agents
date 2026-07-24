@@ -192,7 +192,59 @@ export const MODEL_CATALOG = [
       { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", description: "Most capable" },
     ],
   },
+  {
+    // Sessions on these models run the pi coding agent (pi.dev) instead of
+    // OpenCode as the in-sandbox harness. The id's first segment selects the
+    // harness ("pi"); the remainder is the provider/model pi runs with.
+    category: "Pi Agent",
+    enabledByDefault: false,
+    models: [
+      {
+        id: "pi/anthropic/claude-sonnet-4-6",
+        name: "Claude Sonnet 4.6 (Pi)",
+        description: "Pi agent harness, pi.dev",
+        reasoning: { efforts: ["low", "medium", "high", "max"], default: "high" },
+      },
+      {
+        id: "pi/anthropic/claude-opus-4-8",
+        name: "Claude Opus 4.8 (Pi)",
+        description: "Pi agent harness, pi.dev",
+        reasoning: { efforts: ["low", "medium", "high", "xhigh", "max"], default: "high" },
+      },
+      {
+        id: "pi/anthropic/claude-fable-5",
+        name: "Claude Fable 5 (Pi)",
+        description: "Pi agent harness, pi.dev",
+        reasoning: { efforts: ["low", "medium", "high", "xhigh", "max"], default: "high" },
+      },
+      {
+        id: "pi/openai/gpt-5.4",
+        name: "GPT 5.4 (Pi)",
+        description: "Pi agent harness, needs OPENAI_API_KEY",
+        reasoning: { efforts: ["none", "low", "medium", "high", "xhigh"], default: undefined },
+      },
+    ],
+  },
 ] as const satisfies readonly ModelCatalogGroup[];
+
+/**
+ * Provider prefix that selects the pi coding agent (pi.dev) as the in-sandbox
+ * harness. Model ids look like "pi/<provider>/<model>"; the sandbox runtime
+ * runs `pi --mode rpc` and hands it the trailing "<provider>/<model>".
+ */
+export const PI_AGENT_PROVIDER = "pi";
+
+/** Agent harness that executes prompts inside the sandbox. */
+export type AgentHarness = "opencode" | "pi";
+
+/**
+ * Resolve which in-sandbox agent harness a model id runs on.
+ * Accepts bare, prefixed, and pi-prefixed ids.
+ */
+export function getAgentHarness(modelId: string | undefined | null): AgentHarness {
+  if (!modelId) return "opencode";
+  return extractProviderAndModel(modelId).provider === PI_AGENT_PROVIDER ? "pi" : "opencode";
+}
 
 export type ValidModel = (typeof MODEL_CATALOG)[number]["models"][number]["id"];
 

@@ -171,6 +171,16 @@ class SandboxSupervisor:
         """The branch to clone/fetch — defaults to 'main'."""
         return self.session_config.get("branch") or "main"
 
+    @property
+    def agent_harness(self) -> str:
+        """Agent harness for this session: "opencode" (default) or "pi".
+
+        Selected by the session's model id: "pi/<provider>/<model>" catalog
+        entries arrive here as provider "pi" with the trailing
+        "<provider>/<model>" in the model field (see shared/src/models.ts).
+        """
+        return "pi" if self.session_config.get("provider") == "pi" else "opencode"
+
     def _parse_repositories(self) -> list[RepoEntry]:
         """Build the ordered repository list, deferring config errors to run().
 
@@ -1201,7 +1211,11 @@ class SandboxSupervisor:
         return False
 
     async def start_opencode(self) -> None:
-        """Start OpenCode server with configuration."""
+        """Start the agent harness (OpenCode server, or pi preflight)."""
+        if self.agent_harness == "pi":
+            await self.start_pi_agent()
+            return
+
         self._setup_openai_oauth()
         self.log.info("opencode.start")
 
@@ -1279,6 +1293,37 @@ class SandboxSupervisor:
         self.opencode_ready.set()
         self.log.info("opencode.ready")
 
+    async def start_pi_agent(self) -> None:
+        """Preflight for the pi coding agent (pi.dev) harness.
+
+        Unlike OpenCode, pi is not a long-lived HTTP server: the bridge owns a
+        `pi --mode rpc` subprocess and talks JSONL over its stdio. The
+        supervisor only verifies the binary exists, surfaces unsupported
+        configuration, and unblocks the bridge.
+        """
+        self.log.info("pi.preflight", model=self.session_config.get("model"))
+
+        if shutil.which("pi") is None:
+            raise RuntimeError(
+                "pi agent binary not found in sandbox image "
+                "(expected @earendil-works/pi-coding-agent to be installed)"
+            )
+
+        # Pi has no MCP support (by design — see pi.dev); configured servers
+        # would silently not exist, so tell the user instead.
+        mcp_servers = self._resolve_mcp_servers()
+        if mcp_servers:
+            self._record_boot_warning(
+                scope="agent",
+                message=(
+                    f"{len(mcp_servers)} configured MCP server(s) were skipped: "
+                    "the pi agent does not support MCP."
+                ),
+            )
+
+        self.opencode_ready.set()
+        self.log.info("pi.ready")
+
     async def _forward_opencode_logs(self) -> None:
         """Forward OpenCode stdout to supervisor stdout."""
         if not self.opencode_process or not self.opencode_process.stdout:
@@ -1329,11 +1374,7 @@ class SandboxSupervisor:
             self.log.info("bridge.skip", reason="no_session_id")
             return
 
-        # Run bridge as a module (works with relative imports)
-        self.bridge_process = await asyncio.create_subprocess_exec(
-            "python",
-            "-m",
-            "sandbox_runtime.bridge",
+        bridge_args = [
             "--sandbox-id",
             self.sandbox_id,
             "--session-id",
@@ -1344,6 +1385,27 @@ class SandboxSupervisor:
             self.sandbox_token,
             "--opencode-port",
             str(self.OPENCODE_PORT),
+            "--agent",
+            self.agent_harness,
+        ]
+        if self.agent_harness == "pi":
+            # The bridge spawns the pi RPC process itself; hand it the default
+            # provider/model and the working directory the harness runs in.
+            bridge_args.extend(
+                [
+                    "--agent-model",
+                    str(self.session_config.get("model") or ""),
+                    "--agent-workdir",
+                    str(self._opencode_workdir()),
+                ]
+            )
+
+        # Run bridge as a module (works with relative imports)
+        self.bridge_process = await asyncio.create_subprocess_exec(
+            "python",
+            "-m",
+            "sandbox_runtime.bridge",
+            *bridge_args,
             env=os.environ,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
