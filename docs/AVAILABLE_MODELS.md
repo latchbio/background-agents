@@ -1,8 +1,8 @@
 # Available Models
 
 Open-Inspect exposes these models in the model picker and integration preferences. The default
-enabled set includes Anthropic and OpenAI models. OpenCode Zen, Z.AI Coding Plan, and DeepSeek
-models are available but must be enabled in **Settings > Models**. Z.AI Coding Plan requires
+enabled set includes Anthropic and OpenAI models. OpenCode Zen, Z.AI Coding Plan, DeepSeek, and Pi
+Agent models are available but must be enabled in **Settings > Models**. Z.AI Coding Plan requires
 `ZHIPU_API_KEY`; DeepSeek requires `DEEPSEEK_API_KEY`.
 
 ## Anthropic
@@ -60,3 +60,26 @@ DeepSeek models require `DEEPSEEK_API_KEY` as a global or repository secret.
 | ---------------------------- | ----------------- | ------------ | ----------------- | -------------- |
 | `deepseek/deepseek-v4-flash` | DeepSeek V4 Flash | Fast model   | Not supported     | N/A            |
 | `deepseek/deepseek-v4-pro`   | DeepSeek V4 Pro   | Most capable | Not supported     | N/A            |
+
+## Pi Agent
+
+Pi Agent models run the [pi coding agent](https://pi.dev) instead of OpenCode as the in-sandbox
+harness. The model id's first segment (`pi/`) selects the harness; the remainder is the
+provider/model pi runs with. The harness is fixed when the session's sandbox spawns — start the
+session on a `pi/*` model to use pi. A per-message `pi/*` override on an OpenCode session runs the
+underlying provider/model through OpenCode instead.
+
+Anthropic models work out of the box (the platform's `ANTHROPIC_API_KEY` is available in the
+sandbox); `pi/openai/*` requires an `OPENAI_API_KEY` global or repository secret (pi does not use
+the ChatGPT OAuth flow).
+
+Notes: pi has no MCP support (configured MCP servers are skipped with a session warning), and custom
+OpenCode JS tools/skills are not installed for pi sessions. Reasoning efforts map to pi thinking
+levels (`none` → `off`).
+
+| Model ID                         | Display name           | Description                            | Reasoning efforts              | Default effort |
+| -------------------------------- | ---------------------- | -------------------------------------- | ------------------------------ | -------------- |
+| `pi/anthropic/claude-sonnet-4-6` | Claude Sonnet 4.6 (Pi) | Pi agent harness, pi.dev               | low, medium, high, max         | high           |
+| `pi/anthropic/claude-opus-4-8`   | Claude Opus 4.8 (Pi)   | Pi agent harness, pi.dev               | low, medium, high, xhigh, max  | high           |
+| `pi/anthropic/claude-fable-5`    | Claude Fable 5 (Pi)    | Pi agent harness, pi.dev               | low, medium, high, xhigh, max  | high           |
+| `pi/openai/gpt-5.4`              | GPT 5.4 (Pi)           | Pi agent harness, needs OPENAI_API_KEY | none, low, medium, high, xhigh | Not set        |

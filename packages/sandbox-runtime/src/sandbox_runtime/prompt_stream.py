@@ -675,6 +675,12 @@ class OpenCodePromptStream:
         if model:
             if "/" in model:
                 provider_id, model_id = model.split("/", 1)
+                # "pi/<provider>/<model>" selects the pi harness, which is
+                # fixed at sandbox spawn. When such a per-message override
+                # reaches an OpenCode sandbox, degrade gracefully by running
+                # the underlying provider/model through OpenCode.
+                if provider_id == "pi" and "/" in model_id:
+                    provider_id, model_id = model_id.split("/", 1)
             else:
                 provider_id, model_id = "anthropic", model
             model_spec: dict[str, Any] = {

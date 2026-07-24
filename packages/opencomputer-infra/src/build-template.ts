@@ -4,6 +4,8 @@ import { join, relative } from "node:path";
 import { Image, Snapshots } from "@opencomputer/sdk/node";
 
 const OPENCODE_VERSION = "1.17.18";
+// pi coding agent (pi.dev) — alternative harness selected via pi/* models.
+const PI_VERSION = "0.81.1";
 const CODE_SERVER_VERSION = "4.109.5";
 const PYTHON_VERSION = "3.12";
 const AGENT_BROWSER_VERSION = "0.21.2";
@@ -157,11 +159,13 @@ function buildImage(options: Pick<BuildOptions, "repoRoot" | "builderMemoryMb">)
       // scripts by default. opencode-ai's postinstall copies the real ~180MB native binary over
       // the shipped bin/opencode.exe stub; without allowing it the stub survives and every
       // session dies with "Exec format error: opencode". opencode-ai is the only co-installed
-      // package with an install-time lifecycle script.
-      `sudo env npm_config_cache=${NPM_CACHE} npm install -g --prefix ${NPM_PREFIX} --allow-scripts=opencode-ai pnpm@10 opencode-ai@${OPENCODE_VERSION} @opencode-ai/plugin@${OPENCODE_VERSION} zod@4.4.3 agent-browser@${AGENT_BROWSER_VERSION}`,
+      // package with an install-time lifecycle script; pi's install scripts stay disabled,
+      // matching upstream's recommended --ignore-scripts global install.
+      `sudo env npm_config_cache=${NPM_CACHE} npm install -g --prefix ${NPM_PREFIX} --allow-scripts=opencode-ai pnpm@10 opencode-ai@${OPENCODE_VERSION} @opencode-ai/plugin@${OPENCODE_VERSION} zod@4.4.3 agent-browser@${AGENT_BROWSER_VERSION} @earendil-works/pi-coding-agent@${PI_VERSION}`,
       // Fail the build loudly if opencode is still a stub / not runnable (e.g. if the flag above
       // ever stops taking effect), so a broken image can never ship silently.
-      `${NPM_PREFIX}/bin/opencode --version`
+      `${NPM_PREFIX}/bin/opencode --version`,
+      `${NPM_PREFIX}/bin/pi --version`
     )
     .runCommands(
       // GitHub CLI must exist at the path used by the authentication wrapper.
@@ -240,7 +244,7 @@ function buildImage(options: Pick<BuildOptions, "repoRoot" | "builderMemoryMb">)
       OPENINSPECT_BIN_INSTALL_DIR: USER_BIN,
       NO_PROXY: LOCAL_NO_PROXY,
       no_proxy: LOCAL_NO_PROXY,
-      SANDBOX_VERSION: "v54-opencode-1-17-18",
+      SANDBOX_VERSION: "v55-pi-0-81-1",
     })
     .workdir(`${SANDBOX_HOME}/workspace`)
     .builderMemory(options.builderMemoryMb);

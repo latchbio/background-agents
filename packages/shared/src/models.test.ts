@@ -7,6 +7,7 @@ import {
   MODEL_REASONING_CONFIG,
   VALID_MODELS,
   extractProviderAndModel,
+  getAgentHarness,
   getDefaultReasoningEffort,
   getReasoningConfig,
   getValidModelOrDefault,
@@ -50,6 +51,12 @@ const ZEN_MODELS = [
 
 const DEEPSEEK_MODELS = ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"] as const;
 const ZAI_CODING_PLAN_MODELS = ["zai-coding-plan/glm-5.2"] as const;
+const PI_MODELS = [
+  "pi/anthropic/claude-sonnet-4-6",
+  "pi/anthropic/claude-opus-4-8",
+  "pi/anthropic/claude-fable-5",
+  "pi/openai/gpt-5.4",
+] as const;
 
 describe("model utilities", () => {
   it("derives every public model view from the authoritative catalog", () => {
@@ -99,9 +106,26 @@ describe("model utilities", () => {
       ...ZEN_MODELS,
       ...ZAI_CODING_PLAN_MODELS,
       ...DEEPSEEK_MODELS,
+      ...PI_MODELS,
     ]) {
       expect(isValidModel(model)).toBe(true);
     }
+  });
+
+  it("resolves the agent harness from the model id's provider segment", () => {
+    for (const model of PI_MODELS) {
+      expect(getAgentHarness(model)).toBe("pi");
+      expect(extractProviderAndModel(model).provider).toBe("pi");
+    }
+    expect(extractProviderAndModel("pi/anthropic/claude-sonnet-4-6").model).toBe(
+      "anthropic/claude-sonnet-4-6"
+    );
+    expect(getAgentHarness("anthropic/claude-sonnet-4-6")).toBe("opencode");
+    expect(getAgentHarness("claude-sonnet-4-6")).toBe("opencode");
+    expect(getAgentHarness("openai/gpt-5.3-codex")).toBe("opencode");
+    expect(getAgentHarness(undefined)).toBe("opencode");
+    expect(getAgentHarness(null)).toBe("opencode");
+    expect(getAgentHarness("")).toBe("opencode");
   });
 
   it("normalizes and validates bare Claude and GPT model names", () => {

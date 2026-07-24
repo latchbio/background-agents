@@ -15,6 +15,7 @@ FROM python:3.12-slim-bookworm
 
 # Pinned toolchain versions (keep in sync with daytona-infra/src/toolchain.py).
 ARG OPENCODE_VERSION=1.17.18
+ARG PI_VERSION=0.81.1
 ARG CODE_SERVER_VERSION=4.109.5
 ARG AGENT_BROWSER_VERSION=0.21.2
 
@@ -43,6 +44,9 @@ RUN pip install uv httpx websockets "pydantic>=2.0" "PyJWT[crypto]"
 # Agent toolchain: OpenCode, code-server, agent-browser.
 RUN npm install -g "opencode-ai@${OPENCODE_VERSION}" \
   && npm install -g "@opencode-ai/plugin@${OPENCODE_VERSION}" zod \
+  # pi coding agent (pi.dev) — alternative harness selected via pi/* models.
+  # Upstream recommends --ignore-scripts for global installs.
+  && npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@${PI_VERSION}" \
   && curl -fsSL -o /tmp/code-server.deb \
      "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server_${CODE_SERVER_VERSION}_amd64.deb" \
   && dpkg -i /tmp/code-server.deb \

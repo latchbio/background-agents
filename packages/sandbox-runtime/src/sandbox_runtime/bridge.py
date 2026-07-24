@@ -37,6 +37,8 @@ from .event_forwarder import BufferedEventForwarder
 from .git_signing import UNSIGNED_GIT_USER, GitSigningError, GitSigningRuntime
 from .log_config import configure_logging, get_logger
 from .opencode_client import OpenCodeClient
+from .pi_prompt_stream import PiPromptStream
+from .pi_rpc import PiRpcClient
 from .prompt_stream import OpenCodePromptStream
 from .repo_config import find_repo_entry, load_repo_manifest
 from .types import GitUser
@@ -177,7 +179,10 @@ class AgentBridge:
         control_plane_url: str,
         auth_token: str,
         opencode_port: int = 4096,
-        opencode_client: OpenCodeClient | None = None,
+        opencode_client: OpenCodeClient | PiRpcClient | None = None,
+        agent: str = "opencode",
+        agent_model: str | None = None,
+        agent_workdir: str | None = None,
     ):
         self.sandbox_id = sandbox_id
         self.session_id = session_id
@@ -185,6 +190,11 @@ class AgentBridge:
         self.auth_token = auth_token
         self.opencode_port = opencode_port
         self.opencode_base_url = f"http://localhost:{opencode_port}"
+        # Agent harness executing prompts: "opencode" (local HTTP server) or
+        # "pi" (pi.dev, JSONL RPC subprocess owned by this bridge).
+        self.agent = agent if agent in ("opencode", "pi") else "opencode"
+        self.agent_model = agent_model
+        self.agent_workdir = agent_workdir
 
         # Logger
         self.log = get_logger(
@@ -212,9 +222,13 @@ class AgentBridge:
         self.shutdown_event = asyncio.Event()
         self.git_sync_complete = asyncio.Event()
 
-        # Session state
+        # Session state. `opencode_session_id` is the persisted agent session
+        # identifier regardless of harness (kept under its historical name for
+        # wire compatibility): an OpenCode session id, or a pi session file
+        # path.
         self.opencode_session_id: str | None = None
-        self.session_id_file = Path(tempfile.gettempdir()) / "opencode-session-id"
+        session_id_filename = "pi-session-id" if self.agent == "pi" else "opencode-session-id"
+        self.session_id_file = Path(tempfile.gettempdir()) / session_id_filename
         self.repo_path = Path("/workspace")
         # Supervisor-written canonical repo manifest; push targeting resolves
         # member checkout paths through it rather than joining spec-supplied
@@ -227,16 +241,27 @@ class AgentBridge:
             repo_manifest_path=self.repo_manifest_path,
         )
 
-        # OpenCode transport client; owns its connection pool unless one was
-        # injected (mirrors ControlPlaneDiffClient).
-        self.opencode_client = opencode_client or OpenCodeClient(
-            base_url=self.opencode_base_url,
-            log=self.log,
-        )
+        # Agent transport client; owns its connection pool / subprocess unless
+        # one was injected (mirrors ControlPlaneDiffClient). Both clients share
+        # the session surface the bridge uses (create_session / session_exists
+        # / request_stop / aclose).
+        if opencode_client is not None:
+            self.opencode_client = opencode_client
+        elif self.agent == "pi":
+            self.opencode_client = PiRpcClient(
+                log=self.log,
+                model=self.agent_model,
+                workdir=self.agent_workdir,
+            )
+        else:
+            self.opencode_client = OpenCodeClient(
+                base_url=self.opencode_base_url,
+                log=self.log,
+            )
 
-        # Prompt SSE translator; created on first prompt so that
+        # Prompt event translator; created on first prompt so that
         # sse_inactivity_timeout stays overridable until streaming starts.
-        self._prompt_stream: OpenCodePromptStream | None = None
+        self._prompt_stream: OpenCodePromptStream | PiPromptStream | None = None
 
         # Track the current prompt task so _handle_stop can cancel it
         self._current_prompt_task: asyncio.Task[None] | None = None
@@ -699,7 +724,8 @@ class AgentBridge:
 
             if not had_error and not emitted_output:
                 had_error = True
-                error_message = "OpenCode completed without emitting assistant output."
+                agent_name = "Pi" if self.agent == "pi" else "OpenCode"
+                error_message = f"{agent_name} completed without emitting assistant output."
                 self.log.error(
                     "prompt.no_output",
                     message_id=message_id,
@@ -752,16 +778,26 @@ class AgentBridge:
 
         await self._save_session_id()
 
-    def _ensure_prompt_stream(self) -> OpenCodePromptStream:
-        """The long-lived prompt SSE translator, created on first use."""
+    def _ensure_prompt_stream(self) -> OpenCodePromptStream | PiPromptStream:
+        """The long-lived prompt event translator, created on first use."""
         if self._prompt_stream is None:
-            self._prompt_stream = OpenCodePromptStream(
-                client=self.opencode_client,
-                attachment_processor=self.attachment_processor,
-                log=self.log,
-                sse_inactivity_timeout_seconds=self.sse_inactivity_timeout,
-                prompt_max_duration_seconds=self.PROMPT_MAX_DURATION,
-            )
+            if self.agent == "pi":
+                assert isinstance(self.opencode_client, PiRpcClient)
+                self._prompt_stream = PiPromptStream(
+                    client=self.opencode_client,
+                    log=self.log,
+                    inactivity_timeout_seconds=self.sse_inactivity_timeout,
+                    prompt_max_duration_seconds=self.PROMPT_MAX_DURATION,
+                )
+            else:
+                assert isinstance(self.opencode_client, OpenCodeClient)
+                self._prompt_stream = OpenCodePromptStream(
+                    client=self.opencode_client,
+                    attachment_processor=self.attachment_processor,
+                    log=self.log,
+                    sse_inactivity_timeout_seconds=self.sse_inactivity_timeout,
+                    prompt_max_duration_seconds=self.PROMPT_MAX_DURATION,
+                )
         return self._prompt_stream
 
     async def _stream_opencode_response_sse(
@@ -772,9 +808,9 @@ class AgentBridge:
         reasoning_effort: str | None = None,
         attachments: list[HydratedSessionAttachment] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Stream one prompt's response events (see prompt_stream.py)."""
+        """Stream one prompt's response events (see prompt_stream.py / pi_prompt_stream.py)."""
         if not self.opencode_session_id:
-            raise RuntimeError("OpenCode session not initialized")
+            raise RuntimeError("Agent session not initialized")
 
         stream = self._ensure_prompt_stream()
         async for event in stream.stream_prompt(
@@ -1120,6 +1156,22 @@ async def main() -> None:
     parser.add_argument("--control-plane", required=True, help="Control plane URL")
     parser.add_argument("--token", required=True, help="Auth token")
     parser.add_argument("--opencode-port", type=int, default=4096, help="OpenCode port")
+    parser.add_argument(
+        "--agent",
+        default="opencode",
+        choices=["opencode", "pi"],
+        help="Agent harness executing prompts",
+    )
+    parser.add_argument(
+        "--agent-model",
+        default=None,
+        help="Default provider/model the agent process starts with (pi only)",
+    )
+    parser.add_argument(
+        "--agent-workdir",
+        default=None,
+        help="Working directory the agent process runs in (pi only)",
+    )
 
     args = parser.parse_args()
 
@@ -1129,6 +1181,9 @@ async def main() -> None:
         control_plane_url=args.control_plane,
         auth_token=args.token,
         opencode_port=args.opencode_port,
+        agent=args.agent,
+        agent_model=args.agent_model,
+        agent_workdir=args.agent_workdir,
     )
 
     await bridge.run()

@@ -398,8 +398,13 @@ You can also stop the current execution if the agent is going down the wrong pat
 
 ## The Agent
 
-Open-Inspect uses [OpenCode](https://opencode.ai) as its coding agent. OpenCode is an open-source
-agent designed to run as a server, making it ideal for background execution.
+Open-Inspect uses [OpenCode](https://opencode.ai) as its default coding agent. OpenCode is an
+open-source agent designed to run as a server, making it ideal for background execution.
+
+Sessions started on a `pi/*` model (see [Available Models](AVAILABLE_MODELS.md#pi-agent)) run the
+[pi coding agent](https://pi.dev) instead: the bridge owns a `pi --mode rpc` subprocess and speaks
+its JSONL protocol over stdio rather than talking HTTP/SSE to an OpenCode server. Session history
+persists in pi's session file and is resumed across sandbox restarts.
 
 ### What the Agent Can Do
 

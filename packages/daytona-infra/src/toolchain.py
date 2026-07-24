@@ -11,10 +11,12 @@ from daytona import CreateSnapshotParams, Daytona, Image
 # OpenCode restored `/event` stream context in 1.14.50 and fixed the remaining
 # eager-subscription race in 1.15.5. Keep the CLI and plugin on the same pin.
 OPENCODE_VERSION = "1.17.18"
+# pi coding agent (pi.dev) — alternative harness selected via pi/* models.
+PI_VERSION = "0.81.1"
 CODE_SERVER_VERSION = "4.109.5"
 AGENT_BROWSER_VERSION = "0.21.2"
 # Bump when changing image contents to invalidate the Daytona snapshot.
-SANDBOX_VERSION = "daytona-v3-opencode-1-17-18"
+SANDBOX_VERSION = "daytona-v4-pi-0-81-1"
 
 
 def build_base_image(repo_root: Path) -> Image:
@@ -54,6 +56,8 @@ def build_base_image(repo_root: Path) -> Image:
         .run_commands(
             f"npm install -g opencode-ai@{OPENCODE_VERSION}",
             f"npm install -g @opencode-ai/plugin@{OPENCODE_VERSION} zod",
+            # pi coding agent (pi.dev) — upstream recommends --ignore-scripts.
+            f"npm install -g --ignore-scripts @earendil-works/pi-coding-agent@{PI_VERSION}",
             f"curl -fsSL -o /tmp/code-server.deb "
             f"https://github.com/coder/code-server/releases/download/v{CODE_SERVER_VERSION}/"
             f"code-server_{CODE_SERVER_VERSION}_amd64.deb",

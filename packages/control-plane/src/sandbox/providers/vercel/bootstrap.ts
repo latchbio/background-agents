@@ -6,7 +6,7 @@
 
 export const VERCEL_PYTHON_BIN = "/usr/bin/python3.12";
 export const DEFAULT_VERCEL_RUNTIME = "node24";
-export const VERCEL_SANDBOX_VERSION = "v54-opencode-1-17-18";
+export const VERCEL_SANDBOX_VERSION = "v55-pi-0-81-1";
 export const VERCEL_RUNTIME_WORKDIR = "/tmp/open-inspect-runtime";
 export const VERCEL_LOCAL_RUNTIME_EXTRACT_DIR = `${VERCEL_RUNTIME_WORKDIR}/packages`;
 
@@ -17,6 +17,7 @@ export function buildVercelBootstrapScript(params: { runtimeExtractDir?: string 
 set -euo pipefail
 
 OPENCODE_VERSION="1.17.18"
+PI_VERSION="0.81.1"
 CODE_SERVER_VERSION="4.109.5"
 AGENT_BROWSER_VERSION="0.21.2"
 TTYD_VERSION="1.7.7"
@@ -40,6 +41,8 @@ fi
 sudo ${VERCEL_PYTHON_BIN} -m pip install --break-system-packages uv httpx websockets 'pydantic>=2.0' 'PyJWT[crypto]' || sudo ${VERCEL_PYTHON_BIN} -m pip install uv httpx websockets 'pydantic>=2.0' 'PyJWT[crypto]'
 
 sudo npm install -g pnpm@latest opencode-ai@"$OPENCODE_VERSION" @opencode-ai/plugin@"$OPENCODE_VERSION" zod agent-browser@"$AGENT_BROWSER_VERSION"
+# pi coding agent (pi.dev) — upstream recommends --ignore-scripts for global installs.
+sudo npm install -g --ignore-scripts @earendil-works/pi-coding-agent@"$PI_VERSION"
 if [ ! -x /root/.bun/bin/bun ]; then
   curl -fsSL https://bun.sh/install | sudo -E bash || true
 fi
