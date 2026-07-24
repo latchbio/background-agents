@@ -350,11 +350,82 @@ export async function listChannels(
   return { ok: true, channels };
 }
 
+/** A legacy attachment as it appears on a Slack message (subset we render). */
+export interface SlackMessageAttachment {
+  title?: string;
+  pretext?: string;
+  text?: string;
+  /** Plain-text summary Slack renders where attachments aren't supported. */
+  fallback?: string;
+  fields?: { title?: string; value?: string }[];
+}
+
+/** A Block Kit block as it appears on a Slack message (subset we render). */
+export interface SlackMessageBlock {
+  type?: string;
+  text?: { text?: string };
+  fields?: { text?: string }[];
+  elements?: { text?: string }[];
+}
+
 export interface SlackThreadMessage {
   ts: string;
   text: string;
   user?: string;
   bot_id?: string;
+  attachments?: SlackMessageAttachment[];
+  blocks?: SlackMessageBlock[];
+}
+
+/**
+ * Cap on the rendered text of a single thread message. Alert attachments can
+ * be arbitrarily verbose; the cap keeps thread context prompt-sized.
+ */
+export const MAX_EXTRACTED_MESSAGE_TEXT_LENGTH = 4000;
+
+/**
+ * Compose the human-visible text of a message: top-level `text` plus
+ * attachment and Block Kit content. Integration bots (alerting tools,
+ * webhooks) routinely post with an empty `text` and carry everything in
+ * `attachments` or `blocks`, so rendering `text` alone drops their content
+ * entirely. An attachment's `fallback` duplicates its structured fields, so
+ * it is used only when those yield nothing.
+ */
+export function extractMessageText(message: SlackThreadMessage): string {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string | undefined) => {
+    const trimmed = value?.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    parts.push(trimmed);
+  };
+
+  push(message.text);
+
+  for (const block of message.blocks ?? []) {
+    push(block.text?.text);
+    for (const field of block.fields ?? []) push(field.text);
+    for (const element of block.elements ?? []) push(element.text);
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    const before = parts.length;
+    push(attachment.pretext);
+    push(attachment.title);
+    push(attachment.text);
+    for (const field of attachment.fields ?? []) {
+      const title = field.title?.trim();
+      const value = field.value?.trim();
+      push(title && value ? `${title}: ${value}` : (value ?? title));
+    }
+    if (parts.length === before) push(attachment.fallback);
+  }
+
+  const joined = parts.join("\n");
+  return joined.length > MAX_EXTRACTED_MESSAGE_TEXT_LENGTH
+    ? `${joined.slice(0, MAX_EXTRACTED_MESSAGE_TEXT_LENGTH)}… [truncated]`
+    : joined;
 }
 
 /**

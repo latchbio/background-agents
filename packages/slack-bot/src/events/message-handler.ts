@@ -1,6 +1,7 @@
 import {
   addReaction,
   escapeMrkdwnText,
+  extractMessageText,
   getChannelInfo,
   getMessageFiles,
   getThreadMessages,
@@ -80,11 +81,18 @@ async function fetchThreadHistory(
     if (relevant.length === 0) return [];
     const uniqueUserIds = [...new Set(relevant.map((m) => m.user).filter(Boolean))] as string[];
     const userNames = await resolveUserNames(env.SLACK_BOT_TOKEN, uniqueUserIds);
-    return relevant.map((m) => {
-      if (m.bot_id) return `[Bot]: ${m.text}`;
-      const name = m.user ? userNames.get(m.user) || m.user : "Unknown";
-      return `[${name}]: ${m.text}`;
-    });
+    return relevant
+      .map((m) => {
+        // Bot/webhook messages often carry their content in attachments or
+        // blocks with an empty top-level text; render the composed text and
+        // drop messages that still have none (e.g. image-only posts).
+        const text = extractMessageText(m);
+        if (!text) return null;
+        if (m.bot_id) return `[Bot]: ${text}`;
+        const name = m.user ? userNames.get(m.user) || m.user : "Unknown";
+        return `[${name}]: ${text}`;
+      })
+      .filter((line): line is string => line !== null);
   } catch {
     // Thread context is best effort.
     return undefined;

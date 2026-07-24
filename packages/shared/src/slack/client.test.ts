@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   addReaction,
+  extractMessageText,
+  MAX_EXTRACTED_MESSAGE_TEXT_LENGTH,
   completeExternalUpload,
   getExternalUploadUrl,
   getChannelInfo,
@@ -817,5 +819,84 @@ describe("getMessageFiles", () => {
       ok: false,
       error: "missing_scope",
     });
+  });
+});
+
+describe("extractMessageText", () => {
+  it("returns the plain text of a user message", () => {
+    expect(extractMessageText({ ts: "1.0", text: "hello there" })).toBe("hello there");
+  });
+
+  it("renders a Datadog-style alert carried entirely in attachments", () => {
+    expect(
+      extractMessageText({
+        ts: "1.0",
+        text: "",
+        bot_id: "B123",
+        attachments: [
+          {
+            fallback: "[Triggered] High error rate on api",
+            title: "[Triggered] High error rate on api",
+            text: "error.rate over service:api was > 5% during the last 10m",
+            fields: [
+              { title: "Service", value: "api" },
+              { title: "Env", value: "prod" },
+            ],
+          },
+        ],
+      })
+    ).toBe(
+      "[Triggered] High error rate on api\n" +
+        "error.rate over service:api was > 5% during the last 10m\n" +
+        "Service: api\n" +
+        "Env: prod"
+    );
+  });
+
+  it("uses an attachment's fallback only when its structured fields yield nothing", () => {
+    expect(
+      extractMessageText({
+        ts: "1.0",
+        text: "",
+        attachments: [{ fallback: "plain summary" }],
+      })
+    ).toBe("plain summary");
+  });
+
+  it("renders section, header, context, and field text from blocks", () => {
+    expect(
+      extractMessageText({
+        ts: "1.0",
+        text: "",
+        blocks: [
+          { type: "header", text: { text: "Deploy failed" } },
+          { type: "section", text: { text: "Build step exited 1" } },
+          { type: "section", fields: [{ text: "*Branch:* main" }] },
+          { type: "context", elements: [{ text: "triggered by push" }] },
+        ],
+      })
+    ).toBe("Deploy failed\nBuild step exited 1\n*Branch:* main\ntriggered by push");
+  });
+
+  it("deduplicates repeated content across text, blocks, and attachments", () => {
+    expect(
+      extractMessageText({
+        ts: "1.0",
+        text: "Deploy failed",
+        blocks: [{ type: "section", text: { text: "Deploy failed" } }],
+        attachments: [{ title: "Deploy failed" }],
+      })
+    ).toBe("Deploy failed");
+  });
+
+  it("returns an empty string for a content-less message", () => {
+    expect(extractMessageText({ ts: "1.0", text: "" })).toBe("");
+  });
+
+  it("caps the rendered text at MAX_EXTRACTED_MESSAGE_TEXT_LENGTH", () => {
+    const long = "x".repeat(MAX_EXTRACTED_MESSAGE_TEXT_LENGTH + 100);
+    const rendered = extractMessageText({ ts: "1.0", text: long });
+    expect(rendered).toHaveLength(MAX_EXTRACTED_MESSAGE_TEXT_LENGTH + "… [truncated]".length);
+    expect(rendered.endsWith("… [truncated]")).toBe(true);
   });
 });
