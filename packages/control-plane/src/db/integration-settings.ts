@@ -425,7 +425,13 @@ export class IntegrationSettingsStore {
   ): SlackGlobalSettings {
     const allowedKeys =
       level === "global"
-        ? new Set(["agentNotificationsEnabled", "model", "mentionsPolicy", "routingRules"])
+        ? new Set([
+            "agentNotificationsEnabled",
+            "model",
+            "mentionsPolicy",
+            "routingRules",
+            "defaultTarget",
+          ])
         : new Set(["agentNotificationsEnabled"]);
 
     for (const key of Object.keys(settings)) {
@@ -452,6 +458,10 @@ export class IntegrationSettingsStore {
       );
     }
 
+    if (settings.defaultTarget !== undefined) {
+      this.validateSlackTarget(settings.defaultTarget, "defaultTarget");
+    }
+
     // Routing rules are workspace-wide (the allowedKeys gate above already
     // rejects them at the per-repo level). Validate structure here; normalize
     // for storage. Target existence is not checked (the repo list isn't
@@ -461,6 +471,25 @@ export class IntegrationSettingsStore {
     }
 
     return settings;
+  }
+
+  /**
+   * A Slack target value: an environment id (env_…) or a repository in
+   * "owner/name" form. Existence is not checked (the repo list isn't
+   * available at this layer) — the bot skips a stale target at match time.
+   */
+  private validateSlackTarget(target: unknown, field: string): void {
+    if (typeof target !== "string" || target.trim() === "") {
+      throw new IntegrationSettingsValidationError(`${field} must be a non-empty string`);
+    }
+    const value = target.trim();
+    if (isEnvironmentId(value)) return;
+    const repository = parseRepositoryFullName(value);
+    if (!repository || /[\s:]/.test(repository.repoOwner) || /[\s/]/.test(repository.repoName)) {
+      throw new IntegrationSettingsValidationError(
+        `${field} must be a repository in owner/name form or an environment id (env_…)`
+      );
+    }
   }
 
   private validateRoutingRules(rules: unknown): SlackRoutingRule[] {

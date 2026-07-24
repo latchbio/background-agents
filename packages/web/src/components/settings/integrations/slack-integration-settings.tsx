@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   DEFAULT_MENTIONS_POLICY,
   encodeRepositoryPathSegments,
+  isEnvironmentId,
   MAX_SLACK_ROUTING_RULES,
   MODEL_OPTIONS,
   parseRepositoryFullName,
@@ -149,6 +150,14 @@ export function SlackIntegrationSettings() {
       <GlobalSettingsSection settings={settings} />
 
       <RoutingRulesSection
+        settings={settings}
+        availableRepos={availableRepos}
+        availableEnvironments={availableEnvironments}
+        reposLoaded={reposLoaded}
+        environmentsLoaded={environmentsLoaded}
+      />
+
+      <DefaultTargetSection
         settings={settings}
         availableRepos={availableRepos}
         availableEnvironments={availableEnvironments}
@@ -807,6 +816,158 @@ function RoutingRulesSection({
       <p className="mt-3 text-xs text-muted-foreground">
         Keywords match whole words, case-insensitively. Point each keyword at one repository or
         environment; the same keyword on two targets will prompt for a choice instead of guessing.
+      </p>
+    </Section>
+  );
+}
+
+/** Select value for a stored default target: env id → `env:<id>`, repo as-is. */
+function toDefaultTargetSelectValue(stored: string | undefined): string {
+  const value = (stored ?? "").trim();
+  if (!value) return "";
+  return isEnvironmentId(value) ? environmentOptionValue(value) : value.toLowerCase();
+}
+
+function DefaultTargetSection({
+  settings,
+  availableRepos,
+  availableEnvironments,
+  reposLoaded,
+  environmentsLoaded,
+}: {
+  settings: SlackGlobalConfig | null | undefined;
+  availableRepos: EnrichedRepository[];
+  availableEnvironments: Environment[];
+  /** False while the list is loading — suppresses stale-target warnings. */
+  reposLoaded: boolean;
+  environmentsLoaded: boolean;
+}) {
+  const [target, setTarget] = useState(() =>
+    toDefaultTargetSelectValue(settings?.defaults?.defaultTarget)
+  );
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (settings === undefined || dirty || saving) return;
+    setTarget(toDefaultTargetSelectValue(settings?.defaults?.defaultTarget));
+  }, [settings, dirty, saving]);
+
+  const environmentId = parseEnvironmentOptionValue(target);
+  const isEnvironmentTarget = environmentId !== null;
+  const staleTarget =
+    target !== "" &&
+    (isEnvironmentTarget
+      ? environmentsLoaded && !availableEnvironments.some((e) => e.id === environmentId)
+      : reposLoaded && !availableRepos.some((r) => r.fullName.toLowerCase() === target));
+
+  const handleSave = async () => {
+    setSaving(true);
+    const stored = isEnvironmentTarget ? environmentId : target.trim();
+    const body: SlackGlobalConfig = {
+      defaults: mergedGlobalDefaults(settings, {
+        defaultTarget: stored || undefined,
+      }),
+    };
+
+    try {
+      const res = await fetch(GLOBAL_SETTINGS_KEY, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: body }),
+      });
+      if (res.ok) {
+        mutate(GLOBAL_SETTINGS_KEY);
+        toast.success("Default target saved.");
+        setDirty(false);
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to save default target");
+      }
+    } catch {
+      toast.error("Failed to save default target");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const repoItems = availableRepos.map((r) => (
+    <SelectItem key={r.fullName} value={r.fullName.toLowerCase()}>
+      {r.fullName}
+    </SelectItem>
+  ));
+
+  return (
+    <Section
+      title="Default target"
+      description="Where Slack sessions launch when no routing rule or channel association applies. With no default, the target is inferred from the message."
+    >
+      <div className="flex items-center gap-2">
+        <Select
+          value={target}
+          onValueChange={(v) => {
+            setTarget(v);
+            setDirty(true);
+          }}
+        >
+          <SelectTrigger className="flex-1 sm:max-w-96" aria-label="Default target">
+            <SelectValue placeholder="No default — infer from the message" />
+          </SelectTrigger>
+          <SelectContent>
+            {availableEnvironments.length > 0 ? (
+              <>
+                <SelectGroup>
+                  <SelectLabel>Environments</SelectLabel>
+                  {availableEnvironments.map((environment) => (
+                    <SelectItem key={environment.id} value={environmentOptionValue(environment.id)}>
+                      {environment.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Repositories</SelectLabel>
+                  {repoItems}
+                </SelectGroup>
+              </>
+            ) : (
+              repoItems
+            )}
+            {/* A target that is no longer available must still render so the
+                user can see and re-point it (Radix Select needs a matching item). */}
+            {staleTarget && (
+              <SelectItem value={target}>
+                {isEnvironmentTarget ? `Deleted environment (${environmentId})` : target}
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        <Button onClick={handleSave} disabled={saving || !dirty}>
+          {saving ? "Saving..." : "Save default target"}
+        </Button>
+      </div>
+      {target && (
+        <Button
+          type="button"
+          variant="ghost"
+          className="mt-2 h-auto px-0 text-xs"
+          onClick={() => {
+            setTarget("");
+            setDirty(true);
+          }}
+        >
+          Clear default
+        </Button>
+      )}
+      {staleTarget && (
+        <p className="mt-2 text-xs text-warning">
+          {isEnvironmentTarget
+            ? "This environment no longer exists — the default is ignored until it points at a valid target."
+            : "This repository is not in your accessible repositories — the default is ignored until access is restored."}
+        </p>
+      )}
+      <p className="mt-3 text-xs text-muted-foreground">
+        Routing rules and channel associations still win over the default. Thread replies always
+        stay with their session.
       </p>
     </Section>
   );

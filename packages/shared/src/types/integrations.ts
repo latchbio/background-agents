@@ -224,6 +224,13 @@ export interface SlackGlobalSettings extends SlackRepoSettings {
   mentionsPolicy?: SlackMentionsPolicy;
   /** Workspace-wide keyword→repository routing rules (global-only, like mentionsPolicy). */
   routingRules?: SlackRoutingRule[];
+  /**
+   * Workspace-wide default target: a repository "owner/name" or an
+   * environment id ("env_…"). When no routing rule or channel association
+   * matches, Slack sessions launch here instead of inferring a target from
+   * the message (global-only, like routingRules).
+   */
+  defaultTarget?: string;
 }
 
 /**

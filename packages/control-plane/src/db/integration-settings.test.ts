@@ -1158,6 +1158,40 @@ describe("IntegrationSettingsStore", () => {
       ]);
     });
 
+    it("round-trips defaultTarget at global level", async () => {
+      await store.setGlobal("slack", { defaults: { defaultTarget: "acme/agent-command" } });
+
+      const result = await store.getGlobal("slack");
+      expect(result?.defaults?.defaultTarget).toBe("acme/agent-command");
+    });
+
+    it("accepts an environment id as defaultTarget", async () => {
+      await store.setGlobal("slack", { defaults: { defaultTarget: "env_abc123" } });
+
+      const result = await store.getGlobal("slack");
+      expect(result?.defaults?.defaultTarget).toBe("env_abc123");
+    });
+
+    it("rejects a defaultTarget that is neither owner/name nor an environment id", async () => {
+      await expect(
+        store.setGlobal("slack", { defaults: { defaultTarget: "not-a-repo" } })
+      ).rejects.toThrow(IntegrationSettingsValidationError);
+    });
+
+    it("rejects an empty defaultTarget", async () => {
+      await expect(
+        store.setGlobal("slack", { defaults: { defaultTarget: "   " } })
+      ).rejects.toThrow(IntegrationSettingsValidationError);
+    });
+
+    it("rejects defaultTarget at per-repo level (global-only field)", async () => {
+      await expect(
+        store.setRepoSettings("slack", "acme/widgets", {
+          defaultTarget: "acme/web",
+        } as unknown as { agentNotificationsEnabled?: boolean })
+      ).rejects.toThrow(IntegrationSettingsValidationError);
+    });
+
     it("rejects routingRules at per-repo level (global-only field)", async () => {
       await expect(
         store.setRepoSettings("slack", "acme/widgets", {

@@ -12,6 +12,7 @@ import { buildRepoDescriptions } from "./repos";
 import { buildEnvironmentDescriptions } from "./environments";
 import { loadTargetCatalog, type TargetCatalog } from "./catalog";
 import { matchTargetId, resolveChannelTargets, resolveRoutingRuleTargets } from "./routing";
+import { getDefaultTarget } from "./repos";
 import { escapeMrkdwnText, type ConfidenceLevel } from "@open-inspect/shared";
 import { targetId, targetLabel, targetValue, type SlackSessionTarget } from "../targets";
 import { createLogger } from "../logger";
@@ -336,6 +337,33 @@ export class RepoClassifier {
       : null;
     if (channelRouted) {
       return channelRouted;
+    }
+
+    // The workspace default target is the last deterministic stage: explicit
+    // routing rules and channel associations override it, but it wins over
+    // the single-repo shortcut and LLM inference. A stale default (repo
+    // access revoked, environment deleted) falls through to normal
+    // classification rather than blocking.
+    const defaultTargetValue = await getDefaultTarget(this.env, traceId);
+    if (defaultTargetValue) {
+      const target = matchTargetId(defaultTargetValue, catalog);
+      if (target) {
+        log.info("classifier.default_target_match", {
+          trace_id: traceId,
+          target_id: targetId(target),
+        });
+        return {
+          target,
+          confidence: "high",
+          // Reasoning renders as mrkdwn; the label is user text.
+          reasoning: `Using the workspace default target ${escapeMrkdwnText(targetLabel(target))}`,
+          needsClarification: false,
+        };
+      }
+      log.warn("classifier.default_target_stale", {
+        trace_id: traceId,
+        default_target: defaultTargetValue,
+      });
     }
 
     // With a single repository and no environments there is nothing to choose.

@@ -76,9 +76,10 @@ Open-Inspect chooses from repositories available to this Open-Inspect deployment
 Slack channel context, and recent thread context. It picks a repository in this order: if only one
 repository is available, it uses that one; if your message contains a configured
 [routing-rule keyword](#routing-rules), it routes to that keyword's repository; if an administrator
-has associated the Slack channel with exactly one repository, that repository is used; otherwise it
-infers the repository from your message. When the match is unclear, Open-Inspect asks you to choose
-from candidate repositories in the Slack thread.
+has associated the Slack channel with exactly one repository, that repository is used; if an
+administrator has configured a [default target](#default-target), it is used; otherwise it infers
+the repository from your message. When the match is unclear, Open-Inspect asks you to choose from
+candidate repositories in the Slack thread.
 
 ### From a DM
 
@@ -145,6 +146,18 @@ How matching works:
 
 Routing rules do not override an active thread: a keyword in a thread reply does not move that
 conversation to a different repository.
+
+### Default target
+
+Administrators can set a workspace-wide default target — a repository or a saved environment — under
+**Settings → Integrations → Slack → Default target**. When a message matches no routing rule and the
+channel has no association, the session launches at the default instead of inferring a target from
+the message. This is useful when one repository (or environment) carries the standing instructions
+and tooling every Slack session should start from.
+
+Precedence: routing rules and channel associations still win over the default; active threads are
+never moved. A default whose target is later removed is ignored until it points at a valid target
+again.
 
 ---
 

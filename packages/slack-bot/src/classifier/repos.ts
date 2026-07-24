@@ -197,6 +197,28 @@ export async function getRoutingRules(env: Env, traceId?: string): Promise<Slack
 }
 
 /**
+ * Workspace-wide default Slack target (repository "owner/name" or environment
+ * id) from the control plane's slack settings. Fails open to "" — with no
+ * default, classification proceeds through its normal stages.
+ */
+const defaultTarget = createCachedResource<string>({
+  name: "default_target",
+  kvKey: "slack:default-target",
+  load: async (env, traceId) => {
+    const body = await fetchControlPlaneJson(env, "/integration-settings/slack", traceId);
+    const value = (body as { settings?: SlackGlobalConfig | null }).settings?.defaults
+      ?.defaultTarget;
+    return typeof value === "string" ? value.trim() : "";
+  },
+  deserialize: (cached) => (typeof cached === "string" ? cached : null),
+  fallback: "",
+});
+
+export async function getDefaultTarget(env: Env, traceId?: string): Promise<string> {
+  return defaultTarget.get(env, traceId);
+}
+
+/**
  * Channel IDs watched by enabled `slack_event` automations, used to pre-filter
  * inbound channel messages. KV-backed with no in-memory tier: served from the
  * KV last-known-good copy and refreshed from the control plane on a miss.

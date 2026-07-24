@@ -6,12 +6,14 @@ const {
   mockGetAvailableRepos,
   mockBuildRepoDescriptions,
   mockGetRoutingRules,
+  mockGetDefaultTarget,
   mockGetAvailableEnvironments,
 } = vi.hoisted(() => ({
   mockMessagesCreate: vi.fn(),
   mockGetAvailableRepos: vi.fn(),
   mockBuildRepoDescriptions: vi.fn(),
   mockGetRoutingRules: vi.fn(),
+  mockGetDefaultTarget: vi.fn(),
   mockGetAvailableEnvironments: vi.fn(),
 }));
 
@@ -31,6 +33,7 @@ vi.mock("./repos", () => ({
   getAvailableRepos: mockGetAvailableRepos,
   buildRepoDescriptions: mockBuildRepoDescriptions,
   getRoutingRules: mockGetRoutingRules,
+  getDefaultTarget: mockGetDefaultTarget,
 }));
 
 vi.mock("./environments", async (importOriginal) => ({
@@ -100,6 +103,7 @@ describe("RepoClassifier", () => {
     vi.clearAllMocks();
     mockGetAvailableRepos.mockResolvedValue(TEST_REPOS);
     mockGetRoutingRules.mockResolvedValue([]);
+    mockGetDefaultTarget.mockResolvedValue("");
     mockGetAvailableEnvironments.mockResolvedValue([]);
     mockBuildRepoDescriptions.mockResolvedValue("- acme/prod\n- acme/web");
   });
@@ -396,6 +400,101 @@ describe("RepoClassifier", () => {
       const result = await classifier.classify("fullstack web app issue");
 
       expect(classifiedRepoFullName(result)).toBe("acme/web");
+      expect(mockMessagesCreate).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("default target", () => {
+    it("routes to the default repository without the LLM when nothing else matches", async () => {
+      mockGetDefaultTarget.mockResolvedValue("acme/web");
+
+      const classifier = new RepoClassifier(TEST_ENV);
+      const result = await classifier.classify("anything", { channelId: "C123" });
+
+      expect(classifiedRepoFullName(result)).toBe("acme/web");
+      expect(result.confidence).toBe("high");
+      expect(result.reasoning).toContain("workspace default target acme/web");
+      expect(result.needsClarification).toBe(false);
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+    });
+
+    it("routes to a default environment by id", async () => {
+      mockGetAvailableEnvironments.mockResolvedValue([TEST_ENVIRONMENT]);
+      mockGetDefaultTarget.mockResolvedValue("env_abc123");
+
+      const classifier = new RepoClassifier(TEST_ENV);
+      const result = await classifier.classify("anything", { channelId: "C123" });
+
+      expect(result.target).toEqual({ kind: "environment", environment: TEST_ENVIRONMENT });
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+    });
+
+    it("resolves a default repository case-insensitively", async () => {
+      mockGetDefaultTarget.mockResolvedValue("ACME/Web");
+
+      const classifier = new RepoClassifier(TEST_ENV);
+      const result = await classifier.classify("anything", { channelId: "C123" });
+
+      expect(classifiedRepoFullName(result)).toBe("acme/web");
+    });
+
+    it("is overridden by a matching routing rule", async () => {
+      mockGetRoutingRules.mockResolvedValue([{ keyword: "frontend", target: "acme/prod" }]);
+      mockGetDefaultTarget.mockResolvedValue("acme/web");
+
+      const classifier = new RepoClassifier(TEST_ENV);
+      const result = await classifier.classify("fix the frontend bug", { channelId: "C123" });
+
+      expect(classifiedRepoFullName(result)).toBe("acme/prod");
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+    });
+
+    it("is overridden by a channel association", async () => {
+      mockGetAvailableRepos.mockResolvedValue([
+        { ...TEST_REPOS[0], channelAssociations: ["C123"] },
+        TEST_REPOS[1],
+      ]);
+      mockGetDefaultTarget.mockResolvedValue("acme/web");
+
+      const classifier = new RepoClassifier(TEST_ENV);
+      const result = await classifier.classify("anything", { channelId: "C123" });
+
+      expect(classifiedRepoFullName(result)).toBe("acme/prod");
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+    });
+
+    it("applies without channel context (DMs)", async () => {
+      mockGetDefaultTarget.mockResolvedValue("acme/web");
+
+      const classifier = new RepoClassifier(TEST_ENV);
+      const result = await classifier.classify("anything");
+
+      expect(classifiedRepoFullName(result)).toBe("acme/web");
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+    });
+
+    it("falls through to the LLM when the default target is stale", async () => {
+      mockGetDefaultTarget.mockResolvedValue("acme/deleted");
+      mockMessagesCreate.mockResolvedValue({
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "classify_target",
+            input: {
+              targetId: "acme/prod",
+              confidence: "high",
+              reasoning: "match",
+              alternatives: [],
+            },
+          },
+        ],
+      });
+
+      const classifier = new RepoClassifier(TEST_ENV);
+      const result = await classifier.classify("anything", { channelId: "C123" });
+
+      expect(classifiedRepoFullName(result)).toBe("acme/prod");
       expect(mockMessagesCreate).toHaveBeenCalledOnce();
     });
   });
